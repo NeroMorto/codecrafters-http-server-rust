@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
-use std::io;
+use std::{io, thread};
 use std::net::{TcpListener, TcpStream};
 use std::ops::Add;
 
@@ -192,37 +192,71 @@ impl Server {
         self.handlers.insert(resource, (exact_resource, handler));
     }
 
+    // outer function used instead. Have to find a way to work with threads and self
+    fn _resolve_handler(&self, resource: &String) -> RequestHandler {
+        let possible_handler = &self.handlers.iter().find(|(res, (exact, handler))| {
+            match exact {
+                &true => {
+                    if resource == res.as_str() {
+                        return true
+                    }
+                    false
+                },
+                &false => {
+                    if resource.contains(res.as_str()) {
+                        return true
+                    }
+                    false
+                }
+            }
+        });
+        let handler_404 = RequestHandler::from(|_: &Request| { Response::new("HTTP/1.1 404 Not found".to_string(), Headers::new(), None) });
+        let handler: &RequestHandler = match possible_handler {
+            None => &handler_404,
+            Some((_res, (_exact, handler))) => handler
+        };
+        *handler
+    }
+
     pub fn serve(&self) {
         for stream in self.connection.incoming().flatten() {
-            let reader = BufReader::new(&stream);
-            let request = Request::new(reader).unwrap();
+            // TODO Yes this is bad, I have to find a way to solve this issue somehow
+            let handlers = self.handlers.clone();
 
-            println!("Request: {:?}", request);
-            let mut writer = BufWriter::new(&stream);
-            let possible_handler = &self.handlers.iter().find(|(res, (exact, handler))| {
-                match exact {
-                    &true => {
-                        if request.resource == res.as_str() {
-                            return true
-                        }
-                        false
-                    },
-                    &false => {
-                        if request.resource.contains(res.as_str()) {
-                            return true
-                        }
-                        false
-                    }
-                }
+            thread::spawn(move ||{
+                let reader = BufReader::new(&stream);
+                let request = Request::new(reader).unwrap();
+                println!("Request: {:?}", request);
+                let handler = resolve_handler(&request.resource, &handlers);
+                let mut writer = BufWriter::new(&stream);
+                let response = handler(&request);
+                writer.write(response.try_into_bytes().buffer())
             });
-            let handler_404 = RequestHandler::from(|_: &Request| { Response::new("HTTP/1.1 404 Not found".to_string(), Headers::new(), None) });
-            let handler: &RequestHandler = match possible_handler {
-                None => &handler_404,
-                Some((_res, (_exact, handler))) => handler
-            };
-
-            let response = handler(&request);
-            writer.write(response.try_into_bytes().buffer());
         }
     }
+}
+
+fn resolve_handler(resource: &String, handlers: &HashMap<String, (ExactResource, RequestHandler)>) -> RequestHandler {
+    let possible_handler = handlers.iter().find(|(res, (exact, handler))| {
+        match exact {
+            &true => {
+                if resource == res.as_str() {
+                    return true
+                }
+                false
+            },
+            &false => {
+                if resource.contains(res.as_str()) {
+                    return true
+                }
+                false
+            }
+        }
+    });
+    let handler_404 = RequestHandler::from(|_: &Request| { Response::new("HTTP/1.1 404 Not found".to_string(), Headers::new(), None) });
+    let handler: &RequestHandler = match possible_handler {
+        None => &handler_404,
+        Some((_res, (_exact, handler))) => handler
+    };
+    *handler
 }
