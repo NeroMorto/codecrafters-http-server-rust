@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
-use std::{io, thread};
+use std::{fs, io, path, thread};
+use std::fs::{DirEntry, File};
 use std::net::{TcpListener, TcpStream};
 use std::ops::Add;
+use std::path::Path;
 
 use itertools::Itertools;
 use nom::AsBytes;
@@ -13,12 +15,13 @@ pub enum HTTPMethod {
     POST,
 }
 
-type RequestHandler = fn(request: &Request) -> Response;
+type RequestHandler = fn(request: &Request, Option<String>) -> Response;
 type ExactResource = bool;
 
 pub struct Server {
     connection: TcpListener,
     handlers: HashMap<String, (ExactResource, RequestHandler)>,
+    directory_path: Option<String>
 }
 
 struct RequestLine {
@@ -175,12 +178,41 @@ impl Response {
 }
 
 impl Server {
-    pub fn new(address: &str, port: i32) -> Self {
+    pub fn new(address: &str, port: i32, directory_path: Option<String>) -> Server {
         let listener: TcpListener = TcpListener::bind(format!("{address}:{port}")).unwrap();
         let mut handlers = HashMap::with_capacity(1);
+
+        // let directory_path = match directory_path {
+        //     None => None,
+        //     Some(path) => {
+        //
+        //         let mut entries = fs::read_dir(path).unwrap()
+        //             .map(|res| res.map(|e| e.path()))
+        //             .collect::<Result<Vec<_>, io::Error>>().unwrap();
+        //         println!("DIR_CONTENT: {:?}", entries);
+        //
+        //         let mut data = String::new();
+        //         let mut file = File::open(path.as_str()).unwrap();
+        //         match file.read_to_string(&mut data) {
+        //             Ok(_) => {
+        //                 println!("OK");
+        //             }
+        //             Err(err) => {
+        //                 println!("ERR: {:?}", err);
+        //             }
+        //         };
+        //         Some(data)
+        //     }
+        // };
+        // let rh : RequestHandler = |_, _| {
+        //     // println!("{:?}", directory_path.c);
+        //     Response::new("HTTP/1.1 404 NOT FOUND".to_string(), Headers::new(), Option::None)
+        // };
+        // handlers.insert("/files".to_string(), (ExactResource::from(true), rh));
         Self {
             connection: listener,
             handlers,
+            directory_path
         }
     }
 
@@ -210,7 +242,7 @@ impl Server {
                 }
             }
         });
-        let handler_404 = RequestHandler::from(|_: &Request| { Response::new("HTTP/1.1 404 Not found".to_string(), Headers::new(), None) });
+        let handler_404 = RequestHandler::from(|_, _| { Response::new("HTTP/1.1 404 Not found".to_string(), Headers::new(), None) });
         let handler: &RequestHandler = match possible_handler {
             None => &handler_404,
             Some((_res, (_exact, handler))) => handler
@@ -222,6 +254,13 @@ impl Server {
         for stream in self.connection.incoming().flatten() {
             // TODO Yes this is bad, I have to find a way to solve this issue somehow
             let handlers = self.handlers.clone();
+            let files_dir = self.directory_path.clone();
+            match files_dir.clone() {
+                None => {}
+                Some(str) => {
+                    println!("is str?{:?}", str)
+                }
+            }
 
             thread::spawn(move ||{
                 let reader = BufReader::new(&stream);
@@ -229,7 +268,7 @@ impl Server {
                 println!("Request: {:?}", request);
                 let handler = resolve_handler(&request.resource, &handlers);
                 let mut writer = BufWriter::new(&stream);
-                let response = handler(&request);
+                let response = handler(&request, files_dir);
                 writer.write(response.try_into_bytes().buffer())
             });
         }
@@ -253,7 +292,7 @@ fn resolve_handler(resource: &String, handlers: &HashMap<String, (ExactResource,
             }
         }
     });
-    let handler_404 = RequestHandler::from(|_: &Request| { Response::new("HTTP/1.1 404 Not found".to_string(), Headers::new(), None) });
+    let handler_404 = RequestHandler::from(|_, _| { Response::new("HTTP/1.1 404 Not found".to_string(), Headers::new(), None) });
     let handler: &RequestHandler = match possible_handler {
         None => &handler_404,
         Some((_res, (_exact, handler))) => handler

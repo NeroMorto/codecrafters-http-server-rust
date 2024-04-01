@@ -1,11 +1,12 @@
-use std::fmt::format;
-mod server;
-pub use crate::server::Server;
-// use nom::AsBytes;
-use crate::server::{Headers, HTTPMethod, Request, Response};
+use std::env;
 
-// use std::io::{BufRead, Read, Write};
-use std::net::TcpListener;
+use itertools::Itertools;
+
+// use nom::AsBytes;
+use crate::server::{Headers, Response};
+pub use crate::server::Server;
+
+mod server;
 
 // struct HTTPVersion;
 // struct HTTPStatusCode;
@@ -26,14 +27,22 @@ use std::net::TcpListener;
 
 fn main() {
     // let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
-    let mut server = Server::new("127.0.0.1", 4221);
+    let args: Vec<String> = env::args().collect();
+    let found = args.iter().find_position(|s| { s.contains("--directory") });
+    let argument_value_index = match found {
+        None => None,
+        Some((index, _)) => args.get(index + 1)
+    };
+    println!("{:?}", argument_value_index);
 
-    server.register_handler("/echo".to_string(), Some(false), |request| {
+    let mut server = Server::new("127.0.0.1", 4221, argument_value_index.cloned());
+
+    server.register_handler("/echo".to_string(), Some(false), |request, _| {
         let resource = &request.resource;
         println!("RESOURCE: {:?}", resource);
         let resource_parts = resource.split("/echo/").map(|part| part.try_into().unwrap()).collect::<Vec<&str>>();
 
-        let response_body  = *resource_parts.last().unwrap();
+        let response_body = *resource_parts.last().unwrap();
         println!("RESOURCE: {:?}", resource_parts);
         let mut headers = Headers::new();
         headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
@@ -41,32 +50,56 @@ fn main() {
         return Response::new("HTTP/1.1 200 OK".to_string(), headers, Option::Some(response_body.to_string()));
     });
 
-    server.register_handler("/index.html".to_string(), Some(true),|_| {
-       Response::new("HTTP/1.1 404 NOT FOUND".to_string(), Headers::new(), Option::None)
+    server.register_handler("/index.html".to_string(), Some(true), |_, _| {
+        Response::new("HTTP/1.1 404 NOT FOUND".to_string(), Headers::new(), Option::None)
     });
 
-    server.register_handler("/user-agent".to_string(), Some(true), |r| {
+    server.register_handler("/user-agent".to_string(), Some(true), |r, _| {
         let headers = &r.headers;
         let user_agent = match headers.get("User-Agent") {
             None => None,
             Some(value) => Some(value.get(0).unwrap())
         };
-        println!("{:?}", user_agent);
+
         let response_body = match user_agent {
             None => "",
             Some(value) => value
         };
-        // let user_agent = headers.get("User-Agent").unwrap();
+
         let mut response_headers = Headers::new();
         response_headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
         response_headers.insert("Content-Length".to_string(), [format!("{}", response_body.len()).to_string()].to_vec());
-        let resp =  Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(response_body.to_string()));
+        let resp = Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(response_body.to_string()));
         println!("{:?}", resp);
         resp
     });
 
-    server.register_handler("/".to_string(), Some(true),|r| {
+    server.register_handler("/".to_string(), Some(true), |_, _| {
         Response::new("HTTP/1.1 200 OK".to_string(), Headers::new(), Option::None)
+    });
+    server.register_handler("/files".to_string(), Some(false), |req, dir| {
+        let not_found = Response::new("HTTP/1.1 404 NOT FOUND".to_string(), Headers::new(), Option::None);
+        match dir {
+            None => not_found,
+            Some(dir_path) => {
+                println!("{:?}", dir_path);
+                match req.resource.split_once("/files/") {
+                    None => not_found,
+                    Some((_, file_name)) => {
+                        match std::fs::read_to_string(format!("{dir_path}/{file_name}")) {
+                            Ok(content) =>
+                                {
+                                    let mut response_headers = Headers::new();
+                                    response_headers.insert("Content-Type".to_string(), ["application/octet-stream".to_string()].to_vec());
+                                    response_headers.insert("Content-Length".to_string(), [content.len().to_string()].to_vec());
+                                    Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(content))
+                                }
+                            Err(_) => not_found
+                        }
+                    }
+                }
+            }
+        }
     });
 
     server.serve()
