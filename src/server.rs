@@ -1,10 +1,8 @@
+use std::{io, thread};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
-use std::{fs, io, path, thread};
-use std::fs::{DirEntry, File};
 use std::net::{TcpListener, TcpStream};
 use std::ops::Add;
-use std::path::Path;
 
 use itertools::Itertools;
 use nom::AsBytes;
@@ -124,10 +122,13 @@ impl Request {
             return Ok(Vec::new());
         }
         // let mut str_bod = String::new();
-        let mut body = Vec::with_capacity(content_length);
-        // println!("BODY: {:?}", stream.bytes().size_hint());
-        let _ = stream.read_exact(&mut body)?;
-        // println!("BODY: {:?}", str_bod);
+        let mut body: Vec<u8> = vec![0; content_length];
+        _ = stream.read_exact(&mut body)?;
+        // let body_content = match stream.read_exact(&mut body) {
+        //     Ok(content) => println!("Content? :{:?}", content),
+        //     Err(err) => println!("Error: {:?}", err)
+        // };
+        // println!("BODY: {:?}", String::from_utf8_lossy(&body));
         Ok(body)
     }
 }

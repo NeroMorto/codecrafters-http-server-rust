@@ -3,7 +3,7 @@ use std::env;
 use itertools::Itertools;
 
 // use nom::AsBytes;
-use crate::server::{Headers, Response};
+use crate::server::{Headers, HTTPMethod, Response};
 pub use crate::server::Server;
 
 mod server;
@@ -79,22 +79,39 @@ fn main() {
     });
     server.register_handler("/files".to_string(), Some(false), |req, dir| {
         let not_found = Response::new("HTTP/1.1 404 NOT FOUND".to_string(), Headers::new(), Option::None);
-        match dir {
-            None => not_found,
-            Some(dir_path) => {
-                println!("{:?}", dir_path);
-                match req.resource.split_once("/files/") {
-                    None => not_found,
-                    Some((_, file_name)) => {
-                        match std::fs::read_to_string(format!("{dir_path}/{file_name}")) {
-                            Ok(content) =>
-                                {
-                                    let mut response_headers = Headers::new();
-                                    response_headers.insert("Content-Type".to_string(), ["application/octet-stream".to_string()].to_vec());
-                                    response_headers.insert("Content-Length".to_string(), [content.len().to_string()].to_vec());
-                                    Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(content))
-                                }
-                            Err(_) => not_found
+        match req.method {
+            HTTPMethod::GET => match dir {
+                None => not_found,
+                Some(dir_path) => {
+                    println!("{:?}", dir_path);
+                    match req.resource.split_once("/files/") {
+                        None => not_found,
+                        Some((_, file_name)) => {
+                            match std::fs::read_to_string(format!("{dir_path}/{file_name}")) {
+                                Ok(content) =>
+                                    {
+                                        let mut response_headers = Headers::new();
+                                        response_headers.insert("Content-Type".to_string(), ["application/octet-stream".to_string()].to_vec());
+                                        response_headers.insert("Content-Length".to_string(), [content.len().to_string()].to_vec());
+                                        Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(content))
+                                    }
+                                Err(_) => not_found
+                            }
+                        }
+                    }
+                }
+            }
+
+            HTTPMethod::POST => match dir {
+                None => not_found,
+                Some(dir_path) => {
+                    println!("{:?}", dir_path);
+                    match req.resource.split_once("/files/") {
+                        None => not_found,
+                        Some((_, file_name)) => {
+                            std::fs::write(format!("{dir_path}/{file_name}"), &req.body);
+                            println!("Req: {:?}", req.body);
+                            Response::new("HTTP/1.1 201 CREATED".to_string(), Headers::new(), None)
                         }
                     }
                 }
