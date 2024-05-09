@@ -1,4 +1,5 @@
 use std::env;
+use std::ops::Deref;
 
 use itertools::Itertools;
 
@@ -48,10 +49,11 @@ fn main() {
         headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
         headers.insert("Content-Length".to_string(), [format!("{}", response_body.len()).to_string()].to_vec());
         return Response::new("HTTP/1.1 200 OK".to_string(), headers, Option::Some(response_body.to_string()));
+
     });
 
     server.register_handler("/index.html".to_string(), Some(true), |_, _| {
-        Response::new("HTTP/1.1 404 NOT FOUND".to_string(), Headers::new(), Option::None)
+        Response::new("HTTP/1.1 404 Not Found".to_string(), Headers::new(), Option::None)
     });
 
     server.register_handler("/user-agent".to_string(), Some(true), |r, _| {
@@ -69,18 +71,16 @@ fn main() {
         let mut response_headers = Headers::new();
         response_headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
         response_headers.insert("Content-Length".to_string(), [format!("{}", response_body.len()).to_string()].to_vec());
-        let resp = Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(response_body.to_string()));
-        println!("{:?}", resp);
-        resp
+        return Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(response_body.to_string()));
     });
 
     server.register_handler("/".to_string(), Some(true), |_, _| {
         Response::new("HTTP/1.1 200 OK".to_string(), Headers::new(), Option::None)
     });
     server.register_handler("/files".to_string(), Some(false), |req, dir| {
-        let not_found = Response::new("HTTP/1.1 404 NOT FOUND".to_string(), Headers::new(), Option::None);
+        let not_found = Response::new("HTTP/1.1 404 Not Found".to_string(), Headers::new(), Option::None);
         match req.method {
-            HTTPMethod::GET => match dir {
+            HTTPMethod::GET => match dir.deref() {
                 None => not_found,
                 Some(dir_path) => {
                     println!("{:?}", dir_path);
@@ -102,7 +102,7 @@ fn main() {
                 }
             }
 
-            HTTPMethod::POST => match dir {
+            HTTPMethod::POST => match dir.deref() {
                 None => not_found,
                 Some(dir_path) => {
                     println!("{:?}", dir_path);
@@ -111,7 +111,7 @@ fn main() {
                         Some((_, file_name)) => {
                             std::fs::write(format!("{dir_path}/{file_name}"), &req.body);
                             println!("Req: {:?}", req.body);
-                            Response::new("HTTP/1.1 201 CREATED".to_string(), Headers::new(), None)
+                            Response::new("HTTP/1.1 201 Created".to_string(), Headers::new(), None)
                         }
                     }
                 }

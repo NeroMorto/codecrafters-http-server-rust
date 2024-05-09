@@ -2,7 +2,8 @@ use std::{io, thread};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::ops::Add;
+use std::ops::{Add, Deref};
+use std::sync::{Arc, Mutex};
 
 use itertools::Itertools;
 use nom::AsBytes;
@@ -13,13 +14,13 @@ pub enum HTTPMethod {
     POST,
 }
 
-type RequestHandler = fn(request: &Request, Option<String>) -> Response;
+type RequestHandler = fn(request: &Request, directory_path: Arc<Option<String>>) -> Response;
 type ExactResource = bool;
 
 pub struct Server {
     connection: TcpListener,
-    handlers: HashMap<String, (ExactResource, RequestHandler)>,
-    directory_path: Option<String>
+    handlers: Arc<Mutex<HashMap<String, (ExactResource, RequestHandler)>>>,
+    directory_path: Arc<Option<String>>
 }
 
 struct RequestLine {
@@ -181,35 +182,8 @@ impl Response {
 impl Server {
     pub fn new(address: &str, port: i32, directory_path: Option<String>) -> Server {
         let listener: TcpListener = TcpListener::bind(format!("{address}:{port}")).unwrap();
-        let mut handlers = HashMap::with_capacity(1);
-
-        // let directory_path = match directory_path {
-        //     None => None,
-        //     Some(path) => {
-        //
-        //         let mut entries = fs::read_dir(path).unwrap()
-        //             .map(|res| res.map(|e| e.path()))
-        //             .collect::<Result<Vec<_>, io::Error>>().unwrap();
-        //         println!("DIR_CONTENT: {:?}", entries);
-        //
-        //         let mut data = String::new();
-        //         let mut file = File::open(path.as_str()).unwrap();
-        //         match file.read_to_string(&mut data) {
-        //             Ok(_) => {
-        //                 println!("OK");
-        //             }
-        //             Err(err) => {
-        //                 println!("ERR: {:?}", err);
-        //             }
-        //         };
-        //         Some(data)
-        //     }
-        // };
-        // let rh : RequestHandler = |_, _| {
-        //     // println!("{:?}", directory_path.c);
-        //     Response::new("HTTP/1.1 404 NOT FOUND".to_string(), Headers::new(), Option::None)
-        // };
-        // handlers.insert("/files".to_string(), (ExactResource::from(true), rh));
+        let mut handlers = Arc::new(Mutex::new(HashMap::with_capacity(1)));
+        let directory_path= Arc::new(directory_path);
         Self {
             connection: listener,
             handlers,
@@ -222,12 +196,15 @@ impl Server {
             None => false,
             Some(v) => v
         };
-        self.handlers.insert(resource, (exact_resource, handler));
+        let mut handlers = self.handlers.deref().lock().unwrap();
+        handlers.insert(resource, (exact_resource, handler));
+        // self.handlers.insert(resource, (exact_resource, handler));
     }
 
     // outer function used instead. Have to find a way to work with threads and self
-    fn _resolve_handler(&self, resource: &String) -> RequestHandler {
-        let possible_handler = &self.handlers.iter().find(|(res, (exact, handler))| {
+    fn resolve_handler(&self, resource: &String) -> RequestHandler {
+        let handlers = self.handlers.deref().lock().unwrap();
+        let possible_handler =handlers.iter().find(|(res, (exact, handler))| {
             match exact {
                 &true => {
                     if resource == res.as_str() {
@@ -243,7 +220,7 @@ impl Server {
                 }
             }
         });
-        let handler_404 = RequestHandler::from(|_, _| { Response::new("HTTP/1.1 404 Not found".to_string(), Headers::new(), None) });
+        let handler_404 = RequestHandler::from(|_, _| { Response::new("HTTP/1.1 404 Not Found".to_string(), Headers::new(), None) });
         let handler: &RequestHandler = match possible_handler {
             None => &handler_404,
             Some((_res, (_exact, handler))) => handler
@@ -256,18 +233,18 @@ impl Server {
             // TODO Yes this is bad, I have to find a way to solve this issue somehow
             let handlers = self.handlers.clone();
             let files_dir = self.directory_path.clone();
-            match files_dir.clone() {
+            match files_dir.deref() {
                 None => {}
                 Some(str) => {
                     println!("is str?{:?}", str)
                 }
             }
-
+            let reader = BufReader::new(&stream);
+            let request = Request::new(reader).unwrap();
+            let handler = self.resolve_handler(&request.resource);
             thread::spawn(move ||{
-                let reader = BufReader::new(&stream);
-                let request = Request::new(reader).unwrap();
                 println!("Request: {:?}", request);
-                let handler = resolve_handler(&request.resource, &handlers);
+
                 let mut writer = BufWriter::new(&stream);
                 let response = handler(&request, files_dir);
                 writer.write(response.try_into_bytes().buffer())
@@ -276,7 +253,8 @@ impl Server {
     }
 }
 
-fn resolve_handler(resource: &String, handlers: &HashMap<String, (ExactResource, RequestHandler)>) -> RequestHandler {
+fn resolve_handler(resource: &String, handlers: &Arc<Mutex<HashMap<String, (ExactResource, RequestHandler)>>>) -> RequestHandler {
+    let handlers = handlers.deref().lock().unwrap();
     let possible_handler = handlers.iter().find(|(res, (exact, handler))| {
         match exact {
             &true => {
@@ -293,7 +271,7 @@ fn resolve_handler(resource: &String, handlers: &HashMap<String, (ExactResource,
             }
         }
     });
-    let handler_404 = RequestHandler::from(|_, _| { Response::new("HTTP/1.1 404 Not found".to_string(), Headers::new(), None) });
+    let handler_404 = RequestHandler::from(|_, _| { Response::new("HTTP/1.1 404 Not Found".to_string(), Headers::new(), None) });
     let handler: &RequestHandler = match possible_handler {
         None => &handler_404,
         Some((_res, (_exact, handler))) => handler
