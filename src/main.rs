@@ -3,11 +3,14 @@ use std::ops::Deref;
 
 use itertools::Itertools;
 
-// use nom::AsBytes;
-use crate::server::{Headers, HTTPMethod, Response};
-pub use crate::server::Server;
+use crate::http::Body;
+use crate::http::Headers;
+use crate::http::request::HTTPMethod;
+use crate::http::response::Response;
+use crate::server::Server;
 
 mod server;
+mod http;
 
 // struct HTTPVersion;
 // struct HTTPStatusCode;
@@ -25,7 +28,6 @@ mod server;
 //     headers: Vec<HTTPHeader>,
 //     body:HTTPBody,
 // }
-
 fn main() {
     // let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
     let args: Vec<String> = env::args().collect();
@@ -34,21 +36,33 @@ fn main() {
         None => None,
         Some((index, _)) => args.get(index + 1)
     };
-    println!("{:?}", argument_value_index);
 
     let mut server = Server::new("127.0.0.1", 4221, argument_value_index.cloned());
 
     server.register_handler("/echo".to_string(), Some(false), |request, _| {
         let resource = &request.resource;
-        println!("RESOURCE: {:?}", resource);
-        let resource_parts = resource.split("/echo/").map(|part| part.try_into().unwrap()).collect::<Vec<&str>>();
-
-        let response_body = *resource_parts.last().unwrap();
-        println!("RESOURCE: {:?}", resource_parts);
+        let resource_parts = resource.split_once("/echo/").unwrap().1;
+        let body: Body = resource_parts.parse().unwrap();
         let mut headers = Headers::new();
         headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
-        headers.insert("Content-Length".to_string(), [format!("{}", response_body.len()).to_string()].to_vec());
-        return Response::new("HTTP/1.1 200 OK".to_string(), headers, Option::Some(response_body.to_string()));
+        let accept_encoding_header_value = match request.headers.get("Accept-Encoding") {
+            None => None,
+            Some(value) => value.get(0)
+        };
+
+
+        match accept_encoding_header_value {
+            None => {
+                headers.insert("Content-Length".to_string(), [format!("{}", body.len()).to_string()].to_vec());
+            }
+            Some(header) => {
+                if header == "gzip" {
+                    headers.insert("Content-Encoding".to_string(), ["gzip".to_string()].to_vec());
+                }
+            }
+        }
+
+        Response::new("HTTP/1.1 200 OK".to_string(), headers, Option::Some(body))
 
     });
 
@@ -63,15 +77,15 @@ fn main() {
             Some(value) => Some(value.get(0).unwrap())
         };
 
-        let response_body = match user_agent {
-            None => "",
-            Some(value) => value
+        let response_body: Body = match user_agent {
+            None => Body::default(),
+            Some(value) => value.parse().unwrap()
         };
 
         let mut response_headers = Headers::new();
         response_headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
         response_headers.insert("Content-Length".to_string(), [format!("{}", response_body.len()).to_string()].to_vec());
-        return Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(response_body.to_string()));
+        return Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(response_body));
     });
 
     server.register_handler("/".to_string(), Some(true), |_, _| {
@@ -90,10 +104,11 @@ fn main() {
                             match std::fs::read_to_string(format!("{dir_path}/{file_name}")) {
                                 Ok(content) =>
                                     {
+                                        let body: Body = content.parse().unwrap();
                                         let mut response_headers = Headers::new();
                                         response_headers.insert("Content-Type".to_string(), ["application/octet-stream".to_string()].to_vec());
-                                        response_headers.insert("Content-Length".to_string(), [content.len().to_string()].to_vec());
-                                        Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(content))
+                                        response_headers.insert("Content-Length".to_string(), [body.len().to_string()].to_vec());
+                                        Response::new("HTTP/1.1 200 OK".to_string(), response_headers, Some(body))
                                     }
                                 Err(_) => not_found
                             }
@@ -109,7 +124,8 @@ fn main() {
                     match req.resource.split_once("/files/") {
                         None => not_found,
                         Some((_, file_name)) => {
-                            std::fs::write(format!("{dir_path}/{file_name}"), &req.body);
+                            let body = &req.body;
+                            std::fs::write(format!("{dir_path}/{file_name}"), body).unwrap();
                             println!("Req: {:?}", req.body);
                             Response::new("HTTP/1.1 201 Created".to_string(), Headers::new(), None)
                         }
@@ -120,57 +136,4 @@ fn main() {
     });
 
     server.serve()
-
-
-    // let ok_200: String = "HTTP/1.1 200 OK\r\n\r\n".to_owned();
-    // let not_found_404: String = "HTTP/1.1 404 Not Found\r\n\r\n".to_owned();
-    //
-    // for stream in listener.incoming() {
-    //     match stream {
-    //         Ok(mut stream) => {
-    //             println!("accepted new connection");
-    //
-    //             // let reader = BufReader::new(stream);
-    //
-    //
-    //             let mut buffer = [0; 1024];
-    //             stream.read(&mut buffer).unwrap();
-    //
-    //             let request_lines = String::from_utf8_lossy(&mut buffer);
-    //             for line in request_lines.split("\r\n").into_iter() {
-    //                 match line {
-    //                     line => {
-    //                         if line.starts_with("GET / HTTP") {
-    //                             stream.write(ok_200.as_bytes()).unwrap();
-    //                         }
-    //                         if line.contains("GET /echo/") {
-    //                             let (_, rest) = line.split_once(' ').unwrap();
-    //                             let (target, http_version) = rest.split_once(' ').unwrap();
-    //
-    //                             let target_parts = target.split("/echo/").map(|part| part.try_into().unwrap()).collect::<Vec<&str>>();
-    //
-    //                             let body = target_parts.last().unwrap();
-    //                             let content_length = body.as_bytes().len();
-    //
-    //                             // TODO Create a Request struct
-    //                             stream.write(format!("{http_version} 200 OK\r\n").as_bytes()).unwrap();
-    //                             // TODO Rewrite with structs (Response and its elements)
-    //                             stream.write("Content-Type: text/plain".as_bytes()).unwrap();
-    //                             stream.write("\r\n".as_bytes()).unwrap();
-    //                             stream.write(format!("Content-Length: {content_length}").as_bytes()).unwrap();
-    //                             stream.write("\r\n\r\n".as_bytes()).unwrap();
-    //                             stream.write(body.as_bytes()).unwrap();
-    //                             break;
-    //                         }
-    //
-    //                         stream.write(not_found_404.as_bytes()).unwrap();
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         Err(e) => {
-    //             println!("error: {}", e);
-    //         }
-    //     }
-    // }
 }
