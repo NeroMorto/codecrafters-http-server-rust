@@ -1,6 +1,8 @@
+use std::fmt::Formatter;
 use std::io::{BufReader, ErrorKind, Read};
 use std::io;
 use std::net::TcpStream;
+use std::path::Display;
 use std::str::FromStr;
 
 use crate::http::{Body, Headers, RequestLine};
@@ -16,10 +18,19 @@ enum HTTPHeader {
     Accept,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum HTTPMethod {
     GET,
     POST,
+}
+
+impl std::fmt::Display for HTTPMethod {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HTTPMethod::GET => write!(f, "GET"),
+            HTTPMethod::POST => write!(f, "POST"),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -47,6 +58,13 @@ pub struct Request {
     pub method: HTTPMethod,
     pub headers: Headers,
     pub body: Body,
+}
+
+impl std::fmt::Display for Request {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+
+        write!(f, "{}", format!("Path: {path}, Method: {method}", path=&self.resource, method=&self.method))
+    }
 }
 
 

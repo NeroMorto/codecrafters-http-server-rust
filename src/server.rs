@@ -1,90 +1,77 @@
 use std::collections::HashMap;
 use std::io::{BufReader, BufWriter, Write};
 use std::net::TcpListener;
-use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-
+use crate::config::Config;
 use crate::http::Headers;
 use crate::http::request::Request;
 use crate::http::response::Response;
+use crate::route::Router;
 
-type RequestHandler = fn(request: &Request, directory_path: Arc<Option<String>>) -> Response;
+type RequestHandler = fn(request: &Request, config: &Config) -> Response;
 type ExactResource = bool;
 
 pub struct Server {
-    connection: TcpListener,
     handlers: Arc<Mutex<HashMap<String, (ExactResource, RequestHandler)>>>,
-    directory_path: Arc<Option<String>>
+    config: Arc<Config>,
+    pub router: Arc<Router>,
 }
 
 impl Server {
-    pub fn new(address: &str, port: i32, directory_path: Option<String>) -> Server {
-        let listener: TcpListener = TcpListener::bind(format!("{address}:{port}")).unwrap();
+    pub fn new(config: Config, router: Router) -> Server {
         let handlers = Arc::new(Mutex::new(HashMap::with_capacity(1)));
-        let directory_path= Arc::new(directory_path);
         Self {
-            connection: listener,
             handlers,
-            directory_path
+            config: Arc::new(config),
+            router: Arc::new(router),
         }
     }
 
-    pub fn register_handler(&mut self, resource: String, exact_resource: Option<ExactResource>, handler: RequestHandler) {
-        let exact_resource = match exact_resource {
-            None => false,
-            Some(v) => v
-        };
-        let mut handlers = self.handlers.deref().lock().unwrap();
-        handlers.insert(resource, (exact_resource, handler));
-        // self.handlers.insert(resource, (exact_resource, handler));
-    }
+    fn handle_request(request: &Request, router: &Arc<Router>, config: &Arc<Config>) -> Response {
+        let possible_handler: Option<&RequestHandler> = router.routes.iter().find_map(|route| {
 
-    // outer function used instead. Have to find a way to work with threads and self
-    fn resolve_handler(&self, resource: &String) -> RequestHandler {
-        let handlers = self.handlers.deref().lock().unwrap();
-        let possible_handler =handlers.iter().find(|(res, (exact, _handler))| {
-            match exact {
-                &true => {
-                    if resource == res.as_str() {
-                        return true
-                    }
-                    false
-                },
-                &false => {
-                    if resource.contains(res.as_str()) {
-                        return true
-                    }
-                    false
+            // Rewrite with regular expression
+            if request.resource == '/'.to_string() {
+                if request.resource == route.path && request.method == route.method {
+                    println!("EXACT FOUND: {:?}, {:?}", route.path, route.method);
+                    return Some(&route.handler);
+                }
+            } else {
+                if request.resource.starts_with(route.path.as_str()) && route.path != '/'.to_string() && request.method == route.method {
+                    println!("starts_with FOUND: {:?}, {:?}", route.path, route.method);
+                    return Some(&route.handler);
                 }
             }
+
+            println!("REQUEST: {request}");
+            println!("NOT FOUND: {:?}, {:?}", route.path, route.method);
+
+            None
         });
-        let handler_404 = RequestHandler::from(|_, _| { Response::new("HTTP/1.1 404 Not Found".to_string(), Headers::new(), None) });
-        let handler: &RequestHandler = match possible_handler {
-            None => &handler_404,
-            Some((_res, (_exact, handler))) => handler
+
+        let handler: RequestHandler = match possible_handler {
+            None => RequestHandler::from(|_, _| { Response::new("HTTP/1.1 404 Not Found".to_string(), Headers::new(), None) }),
+            Some(handler) => *handler
         };
-        *handler
+        handler(&request, &config)
     }
+
 
     pub fn serve(&self) {
-        for stream in self.connection.incoming().flatten() {
-            let files_dir = self.directory_path.clone();
-            match files_dir.deref() {
-                None => {}
-                Some(str) => {
-                    println!("is str?{:?}", str)
-                }
-            }
+        let address = format!("{hostname}:{port}", hostname = self.config.address, port = self.config.port);
+        let listener: TcpListener = TcpListener::bind(address).unwrap();
+        for stream in listener.incoming().flatten() {
             let reader = BufReader::new(&stream);
             let request = Request::new(reader).unwrap();
-            let handler = self.resolve_handler(&request.resource);
-            thread::spawn(move ||{
-                println!("Request: {:?}", request);
-
+            let config = self.config.clone();
+            let router = self.router.clone();
+            thread::spawn(move || {
+                // println!("Request: {:?}", reader);
+                let response = Server::handle_request(&request, &router, &config);
                 let mut writer = BufWriter::new(&stream);
-                let response = handler(&request, files_dir);
+                // let response = handler(&request, &config);
                 writer.write(response.try_into_bytes().buffer())
             });
         }
