@@ -7,7 +7,7 @@ use std::thread;
 use crate::config::Config;
 use crate::http::Headers;
 use crate::http::request::Request;
-use crate::http::response::Response;
+use crate::http::response::{HTTPStatus, Response};
 use crate::route::Router;
 
 type RequestHandler = fn(request: &Request, config: &Config) -> Response;
@@ -52,7 +52,7 @@ impl Server {
         });
 
         let handler: RequestHandler = match possible_handler {
-            None => RequestHandler::from(|_, _| { Response::new("HTTP/1.1 404 Not Found".to_string(), Headers::new(), None) }),
+            None => RequestHandler::from(|_, _| { Response::new(HTTPStatus::NotFound) }),
             Some(handler) => *handler
         };
         handler(&request, &config)
@@ -63,13 +63,16 @@ impl Server {
         let address = format!("{hostname}:{port}", hostname = self.config.address, port = self.config.port);
         let listener: TcpListener = TcpListener::bind(address).unwrap();
         for stream in listener.incoming().flatten() {
+
+            // TODO try to move inside request_handler
             let reader = BufReader::new(&stream);
             let request = Request::new(reader).unwrap();
             let config = self.config.clone();
             let router = self.router.clone();
             thread::spawn(move || {
                 // println!("Request: {:?}", reader);
-                let response = Server::handle_request(&request, &router, &config);
+                let mut response = Server::handle_request(&request, &router, &config);
+                response.set_http_version(request.)
                 let mut writer = BufWriter::new(&stream);
                 // let response = handler(&request, &config);
                 writer.write(response.try_into_bytes().buffer())

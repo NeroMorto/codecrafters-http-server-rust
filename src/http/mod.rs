@@ -28,9 +28,7 @@ pub struct Body {
 impl FromStr for Body {
     type Err = BodyTransformError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            _ => Ok(Body { content: s.bytes().collect() }),
-        }
+        Ok(Body { content: s.bytes().collect() })
     }
 }
 
