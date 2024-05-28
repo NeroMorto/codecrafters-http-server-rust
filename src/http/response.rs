@@ -30,6 +30,10 @@ pub struct Response {
 }
 
 impl Response {
+    // TODO
+    // Add set_body, set_headers
+    // Add method for response headers separator and body separator
+    // Add method to add body length header (or add it by default?)
     pub fn new(status: HTTPStatus) -> Self {
         Self {
             status,
@@ -45,8 +49,17 @@ impl Response {
 
     pub fn try_into_bytes(&self) -> BufWriter<Vec<u8>> {
         let mut buf = BufWriter::new(Vec::with_capacity(1));
-        buf.write(self.status.to_string().as_bytes()).unwrap();
+
+        let status_line = format!(
+            "{http_version} {status}",
+            status = self.status.to_string(),
+            http_version = self.http_version.clone().unwrap_or("HTTP/1.1".to_string())
+        );
+
+        buf.write(status_line.as_bytes()).unwrap();
+
         buf.write("\r\n".as_bytes()).unwrap();
+
         let headers = self.headers.iter().map(|(header_name, header_value)| {
             return format!("{header_name}: {values}", values = header_value.join(", "));
         }).collect::<Vec<_>>().join("\r\n");

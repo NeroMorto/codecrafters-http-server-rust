@@ -2,15 +2,16 @@ use std::fmt::Formatter;
 use std::io::{BufReader, ErrorKind, Read};
 use std::io;
 use std::net::TcpStream;
-use std::path::Display;
 use std::str::FromStr;
 
 use crate::http::{Body, Headers, RequestLine};
 
 #[allow(dead_code)]
 struct RequestTarget(String);
+
 #[allow(dead_code)]
 struct HTTPVersion;
+
 #[allow(dead_code)]
 enum HTTPHeader {
     Host,
@@ -37,8 +38,9 @@ impl std::fmt::Display for HTTPMethod {
 pub enum HTTPRequestParseError {
     InvalidMethodError,
     InvalidStatusLineError,
-    InvalidPathError
+    InvalidPathError,
 }
+
 impl FromStr for HTTPMethod {
     type Err = HTTPRequestParseError;
 
@@ -54,6 +56,7 @@ impl FromStr for HTTPMethod {
 
 #[derive(Debug)]
 pub struct Request {
+    pub http_version: String,
     pub resource: String,
     pub method: HTTPMethod,
     pub headers: Headers,
@@ -62,8 +65,7 @@ pub struct Request {
 
 impl std::fmt::Display for Request {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-
-        write!(f, "{}", format!("Path: {path}, Method: {method}", path=&self.resource, method=&self.method))
+        write!(f, "{}", format!("Path: {path}, Method: {method}", path = &self.resource, method = &self.method))
     }
 }
 
@@ -84,6 +86,7 @@ impl Request {
 
 
         Ok(Self {
+            http_version: request_line.http_version,
             resource: request_line.resource,
             method: request_line.http_method,
             headers,

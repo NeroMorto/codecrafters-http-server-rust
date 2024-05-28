@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::config::Config;
-use crate::http::Headers;
+use crate::http::{Headers, response};
 use crate::http::request::Request;
 use crate::http::response::{HTTPStatus, Response};
 use crate::route::Router;
@@ -55,7 +55,9 @@ impl Server {
             None => RequestHandler::from(|_, _| { Response::new(HTTPStatus::NotFound) }),
             Some(handler) => *handler
         };
-        handler(&request, &config)
+        let mut response = handler(&request, &config);
+        response.set_http_version(&request.http_version);
+        response
     }
 
 
@@ -72,7 +74,7 @@ impl Server {
             thread::spawn(move || {
                 // println!("Request: {:?}", reader);
                 let mut response = Server::handle_request(&request, &router, &config);
-                response.set_http_version(request.)
+                
                 let mut writer = BufWriter::new(&stream);
                 // let response = handler(&request, &config);
                 writer.write(response.try_into_bytes().buffer())

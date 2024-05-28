@@ -1,16 +1,13 @@
-use crate::http::{Body, Headers};
+use crate::http::{Body, Headers, response};
 use crate::http::request::HTTPMethod;
 use crate::http::response::{HTTPStatus, Response};
 use crate::route::Route;
 
 pub fn get_routes() -> Vec<Route> {
     let echo = Route::new(HTTPMethod::GET, "/echo", |request, _| {
-        // let resource = &request.resource;
         let resource_parts = request.resource.split_once("/echo/").unwrap().1;
         let mut response = Response::new(HTTPStatus::Ok);
-        let body : Body = resource_parts.parse().unwrap();
         response.body = Some(resource_parts.parse().unwrap());
-        let mut headers = Headers::new();
         response.headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
         let accept_encoding_header_value = match request.headers.get("Accept-Encoding") {
             None => None,
@@ -30,7 +27,6 @@ pub fn get_routes() -> Vec<Route> {
         }
 
         response
-
     });
 
     let root_route = Route::new(HTTPMethod::GET, "/", |request, config| {
@@ -49,11 +45,13 @@ pub fn get_routes() -> Vec<Route> {
             None => Body::default(),
             Some(value) => value.parse().unwrap()
         };
+        let mut response = Response::new(HTTPStatus::Ok);
 
-        let mut response_headers = Headers::new();
-        response_headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
-        response_headers.insert("Content-Length".to_string(), [format!("{}", response_body.len()).to_string()].to_vec());
-        return Response::new(HTTPStatus::Ok);
+        response.headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
+        response.headers.insert("Content-Length".to_string(), [format!("{}", response_body.len()).to_string()].to_vec());
+
+        response.body = Some(response_body);
+        response
     });
 
     let read_files_route = Route::new(HTTPMethod::GET, "/files", |request, config| {
@@ -68,11 +66,13 @@ pub fn get_routes() -> Vec<Route> {
                         match std::fs::read_to_string(format!("{dir_path}/{file_name}")) {
                             Ok(content) =>
                                 {
+                                    let mut response = Response::new(HTTPStatus::Ok);
                                     let body: Body = content.parse().unwrap();
-                                    let mut response_headers = Headers::new();
-                                    response_headers.insert("Content-Type".to_string(), ["application/octet-stream".to_string()].to_vec());
-                                    response_headers.insert("Content-Length".to_string(), [body.len().to_string()].to_vec());
-                                    Response::new(HTTPStatus::Ok)
+
+                                    response.headers.insert("Content-Type".to_string(), ["application/octet-stream".to_string()].to_vec());
+                                    response.headers.insert("Content-Length".to_string(), [body.len().to_string()].to_vec());
+                                    response.body = Some(body);
+                                    response
                                 }
                             Err(_) => not_found
                         }
@@ -93,7 +93,9 @@ pub fn get_routes() -> Vec<Route> {
                     Some((_, file_name)) => {
                         let body = &request.body;
                         std::fs::write(format!("{dir_path}/{file_name}"), body).unwrap();
+
                         println!("Req: {:?}", request.body);
+
                         Response::new(HTTPStatus::Created)
                     }
                 }
