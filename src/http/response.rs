@@ -1,6 +1,6 @@
 use std::io::{BufWriter, Write};
 
-use crate::http::{Body, Headers};
+use crate::http::{Body, Headers, HTTPHeader};
 
 struct Status(i8, String);
 
@@ -45,6 +45,10 @@ impl Response {
 
     pub fn set_http_version(&mut self, http_version: &str) {
         self.http_version = Some(http_version.to_string())
+    }
+
+    pub fn add_header(&mut self, header: HTTPHeader) {
+        self.headers.insert(header.name, header.values);
     }
 
     pub fn try_into_bytes(&self) -> BufWriter<Vec<u8>> {

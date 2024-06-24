@@ -1,4 +1,4 @@
-use crate::http::{Body, Headers, response};
+use crate::http::{Body, Headers, HTTPHeader, response};
 use crate::http::request::HTTPMethod;
 use crate::http::response::{HTTPStatus, Response};
 use crate::route::Route;
@@ -7,8 +7,8 @@ pub fn get_routes() -> Vec<Route> {
     let echo = Route::new(HTTPMethod::GET, "/echo", |request, _| {
         let resource_parts = request.resource.split_once("/echo/").unwrap().1;
         let mut response = Response::new(HTTPStatus::Ok);
-        response.body = Some(resource_parts.parse().unwrap());
-        response.headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
+        let body: Body = resource_parts.parse().unwrap();
+        response.add_header(HTTPHeader::new("Content-Type", vec!["text/plain"]));
         let accept_encoding_header_value = match request.headers.get("Accept-Encoding") {
             None => None,
             Some(value) => value.get(0)
@@ -17,15 +17,15 @@ pub fn get_routes() -> Vec<Route> {
 
         match accept_encoding_header_value {
             None => {
-                response.headers.insert("Content-Length".to_string(), [format!("{}", response.body.as_ref().expect("Missing body").len()).to_string()].to_vec());
+                response.add_header(HTTPHeader::new("Content-Length", vec![body.len().to_string().as_str()]));
             }
             Some(header) => {
                 if header == "gzip" {
-                    response.headers.insert("Content-Encoding".to_string(), ["gzip".to_string()].to_vec());
+                    response.add_header(HTTPHeader::new("Content-Encoding", vec!["gzip"]));
                 }
             }
         }
-
+        response.body = Some(body);
         response
     });
 
@@ -46,9 +46,8 @@ pub fn get_routes() -> Vec<Route> {
             Some(value) => value.parse().unwrap()
         };
         let mut response = Response::new(HTTPStatus::Ok);
-
-        response.headers.insert("Content-Type".to_string(), ["text/plain".to_string()].to_vec());
-        response.headers.insert("Content-Length".to_string(), [format!("{}", response_body.len()).to_string()].to_vec());
+        response.add_header(HTTPHeader::new("Content-Type", vec!["text/plain"]));
+        response.add_header(HTTPHeader::new("Content-Length", vec![response_body.len().to_string().as_str()]));
 
         response.body = Some(response_body);
         response
@@ -69,8 +68,9 @@ pub fn get_routes() -> Vec<Route> {
                                     let mut response = Response::new(HTTPStatus::Ok);
                                     let body: Body = content.parse().unwrap();
 
-                                    response.headers.insert("Content-Type".to_string(), ["application/octet-stream".to_string()].to_vec());
-                                    response.headers.insert("Content-Length".to_string(), [body.len().to_string()].to_vec());
+                                    response.add_header(HTTPHeader::new("Content-Type", vec!["application/octet-stream"]));
+                                    response.add_header(HTTPHeader::new("Content-Length", vec![body.len().to_string().as_str()]));
+
                                     response.body = Some(body);
                                     response
                                 }
