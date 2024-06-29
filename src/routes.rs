@@ -1,4 +1,5 @@
 use crate::http::Body;
+use crate::http::compression;
 use crate::http::headers::HTTPHeader;
 use crate::http::request::HTTPMethod;
 use crate::http::response::{HTTPStatus, Response};
@@ -6,23 +7,31 @@ use crate::route::Route;
 
 pub fn get_routes() -> Vec<Route> {
     let echo = Route::new(HTTPMethod::GET, "/echo", |request, _| {
-        let resource_parts = request.resource.split_once("/echo/").unwrap().1;
+        let echo_data = request.resource.split_once("/echo/").unwrap().1;
 
         let mut response = Response::new(HTTPStatus::Ok);
-        response.set_body(resource_parts.parse().unwrap());
         response.add_known_header(HTTPHeader::ContentType, vec!["text/plain"]);
 
-        let accept_encoding_values = request.get_known_header_values(HTTPHeader::AcceptEncoding);
-
-        match accept_encoding_values {
-            None => response.set_content_length_header(),
+        match request.get_known_header_values(HTTPHeader::AcceptEncoding) {
+            None => {
+                response.set_body(echo_data.parse().unwrap());
+                response.set_content_length_header();
+            }
             Some(values) => {
                 match values.len() {
                     0 => {}
                     _ => {
                         for encoding in values.iter() {
                             if encoding == "gzip" {
-                                response.add_known_header(HTTPHeader::ContentEncoding, vec![encoding]);
+                                // TODO Move compression to common place for handling requests
+                                // As well as setting content length?
+                                match compression::gzip(echo_data) {
+                                    Err(_) => {}
+                                    Ok(data) => {
+                                        response.add_known_header(HTTPHeader::ContentEncoding, vec![encoding]);
+                                        response.set_body(Body::new(data));
+                                    }
+                                }
                                 break;
                             }
                         }
@@ -30,7 +39,7 @@ pub fn get_routes() -> Vec<Route> {
                 }
             }
         };
-
+        response.set_content_length_header();
         response
     });
 
@@ -64,20 +73,18 @@ pub fn get_routes() -> Vec<Route> {
         match &config.files_path {
             None => not_found,
             Some(dir_path) => {
-                println!("{:?}", dir_path);
                 match request.resource.split_once("/files/") {
                     None => not_found,
                     Some((_, file_name)) => {
                         match std::fs::read_to_string(format!("{dir_path}/{file_name}")) {
-                            Ok(content) =>
-                                {
-                                    let mut response = Response::new(HTTPStatus::Ok);
-                                    let body: Body = content.parse().unwrap();
-                                    response.add_known_header(HTTPHeader::ContentType, vec!["application/octet-stream"]);
-                                    response.set_body(body);
-                                    response.set_content_length_header();
-                                    response
-                                }
+                            Ok(content) => {
+                                let mut response = Response::new(HTTPStatus::Ok);
+                                let body: Body = content.parse().unwrap();
+                                response.add_known_header(HTTPHeader::ContentType, vec!["application/octet-stream"]);
+                                response.set_body(body);
+                                response.set_content_length_header();
+                                response
+                            }
                             Err(_) => not_found
                         }
                     }
@@ -87,19 +94,14 @@ pub fn get_routes() -> Vec<Route> {
     });
     let write_files_route = Route::new(HTTPMethod::POST, "/files", |request, config| {
         let not_found = Response::new(HTTPStatus::NotFound);
-        // return configuration error?
         match &config.files_path {
             None => not_found,
             Some(dir_path) => {
-                println!("{:?}", dir_path);
                 match request.resource.split_once("/files/") {
                     None => not_found,
                     Some((_, file_name)) => {
                         let body = &request.body;
                         std::fs::write(format!("{dir_path}/{file_name}"), body).unwrap();
-
-                        println!("Req: {:?}", request.body);
-
                         Response::new(HTTPStatus::Created)
                     }
                 }

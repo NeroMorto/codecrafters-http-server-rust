@@ -5,6 +5,7 @@ use crate::http::request::HTTPMethod;
 pub mod request;
 pub mod response;
 pub mod headers;
+pub mod compression;
 
 struct RequestLine {
     http_method: HTTPMethod,

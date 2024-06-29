@@ -29,18 +29,13 @@ impl Server {
             // Rewrite with regular expression
             if request.resource == '/'.to_string() {
                 if request.resource == route.path && request.method == route.method {
-                    println!("EXACT FOUND: {:?}, {:?}", route.path, route.method);
                     return Some(&route.handler);
                 }
             } else {
                 if request.resource.starts_with(route.path.as_str()) && route.path != '/'.to_string() && request.method == route.method {
-                    println!("starts_with FOUND: {:?}, {:?}", route.path, route.method);
                     return Some(&route.handler);
                 }
             }
-
-            println!("REQUEST: {request}");
-            println!("NOT FOUND: {:?}, {:?}", route.path, route.method);
 
             None
         });
@@ -66,11 +61,8 @@ impl Server {
             let config = self.config.clone();
             let router = self.router.clone();
             thread::spawn(move || {
-                // println!("Request: {:?}", reader);
                 let response = Server::handle_request(&request, &router, &config);
-
                 let mut writer = BufWriter::new(&stream);
-                // let response = handler(&request, &config);
                 writer.write(response.try_into_bytes().buffer())
             });
         }

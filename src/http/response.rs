@@ -1,5 +1,7 @@
 use std::io::{BufWriter, Write};
 
+use nom::AsBytes;
+
 use crate::http::{Body, HeaderName};
 use crate::http::headers::{HeaderMap, HTTPHeader};
 
@@ -99,13 +101,13 @@ impl Response {
 
         buf.write(headers.as_bytes()).unwrap();
         let _ = Response::write_line_feed(&mut buf);
+        let _ = Response::write_line_feed(&mut buf);
 
 
         match &self.body {
             None => {}
             Some(body) => {
-                let _ = Response::write_line_feed(&mut buf);
-                buf.write(body.content.as_slice()).unwrap();
+                buf.write(body.content.as_bytes()).unwrap();
             }
         }
         buf
