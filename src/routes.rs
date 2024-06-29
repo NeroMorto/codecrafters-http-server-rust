@@ -13,14 +13,18 @@ pub fn get_routes() -> Vec<Route> {
         response.add_known_header(HTTPHeader::ContentType, vec!["text/plain"]);
 
         let accept_encoding_values = request.get_known_header_values(HTTPHeader::AcceptEncoding);
+
         match accept_encoding_values {
             None => response.set_content_length_header(),
             Some(values) => {
-                match values.first() {
-                    None => {}
-                    Some(encoding) => {
-                        if encoding == "gzip" {
-                            response.add_known_header(HTTPHeader::ContentEncoding, vec![encoding])
+                match values.len() {
+                    0 => {}
+                    _ => {
+                        for encoding in values.iter() {
+                            if encoding == "gzip" {
+                                response.add_known_header(HTTPHeader::ContentEncoding, vec![encoding]);
+                                break;
+                            }
                         }
                     }
                 }

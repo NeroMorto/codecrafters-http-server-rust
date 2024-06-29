@@ -100,10 +100,10 @@ impl Request {
 
             let mut header_name_and_value = header_line.split(": ");
             let name = header_name_and_value.next().unwrap().to_string();
-            let value = header_name_and_value.next().unwrap().to_string();
+            let values = header_name_and_value.next().unwrap().split(", ").map(|x| x.to_string()).collect::<Vec<String>>();
 
             let header_value_slot = headers.entry(name).or_insert(Vec::with_capacity(1));
-            header_value_slot.push(value);
+            header_value_slot.extend(values);
         }
 
         Ok(headers)
