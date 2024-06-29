@@ -1,29 +1,10 @@
 use std::str::FromStr;
-
+use crate::http::headers::HTTPHeader;
 use crate::http::request::HTTPMethod;
 
 pub mod request;
 pub mod response;
-
-pub type Headers = std::collections::HashMap<String, Vec<String>>;
-
-pub struct HTTPHeader {
-    name: String,
-    values: Vec<String>,
-}
-
-impl HTTPHeader {
-    pub fn new(name: &str, values: Vec<&str>) -> Self {
-        Self {
-            name: name.to_string(),
-            values: values.iter().map(|&value| { value.to_string() }).collect(),
-        }
-    }
-
-    pub fn add_value(&mut self, value: &str) {
-        self.values.push(value.to_string())
-    }
-}
+pub mod headers;
 
 struct RequestLine {
     http_method: HTTPMethod,
@@ -66,4 +47,9 @@ impl Body {
     pub fn len(&self) -> usize {
         self.content.len()
     }
+}
+
+enum HeaderName {
+    Known(HTTPHeader),
+    Custom(String),
 }

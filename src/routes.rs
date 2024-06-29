@@ -1,4 +1,5 @@
-use crate::http::{Body, Headers, HTTPHeader, response};
+use crate::http::Body;
+use crate::http::headers::HTTPHeader;
 use crate::http::request::HTTPMethod;
 use crate::http::response::{HTTPStatus, Response};
 use crate::route::Route;
@@ -6,50 +7,51 @@ use crate::route::Route;
 pub fn get_routes() -> Vec<Route> {
     let echo = Route::new(HTTPMethod::GET, "/echo", |request, _| {
         let resource_parts = request.resource.split_once("/echo/").unwrap().1;
+
         let mut response = Response::new(HTTPStatus::Ok);
-        let body: Body = resource_parts.parse().unwrap();
-        response.add_header(HTTPHeader::new("Content-Type", vec!["text/plain"]));
-        let accept_encoding_header_value = match request.headers.get("Accept-Encoding") {
-            None => None,
-            Some(value) => value.get(0)
-        };
+        response.set_body(resource_parts.parse().unwrap());
+        response.add_known_header(HTTPHeader::ContentType, vec!["text/plain"]);
 
-
-        match accept_encoding_header_value {
-            None => {
-                response.add_header(HTTPHeader::new("Content-Length", vec![body.len().to_string().as_str()]));
-            }
-            Some(header) => {
-                if header == "gzip" {
-                    response.add_header(HTTPHeader::new("Content-Encoding", vec!["gzip"]));
+        let accept_encoding_values = request.get_known_header_values(HTTPHeader::AcceptEncoding);
+        match accept_encoding_values {
+            None => response.set_content_length_header(),
+            Some(values) => {
+                match values.first() {
+                    None => {}
+                    Some(encoding) => {
+                        if encoding == "gzip" {
+                            response.add_known_header(HTTPHeader::ContentEncoding, vec![encoding])
+                        }
+                    }
                 }
             }
-        }
-        response.body = Some(body);
+        };
+
         response
     });
 
-    let root_route = Route::new(HTTPMethod::GET, "/", |request, config| {
+    let root_route = Route::new(HTTPMethod::GET, "/", |_request, _config| {
         Response::new(HTTPStatus::Ok)
     });
-    let index_route = Route::new(HTTPMethod::GET, "/index.html", |request, config| {
+    let index_route = Route::new(HTTPMethod::GET, "/index.html", |_request, _config| {
         Response::new(HTTPStatus::NotFound)
     });
+
     let user_agent_route = Route::new(HTTPMethod::GET, "/user-agent", |request, _| {
-        let user_agent = match &request.headers.get("User-Agent") {
-            None => None,
-            Some(value) => Some(value.get(0).unwrap())
-        };
-
-        let response_body: Body = match user_agent {
-            None => Body::default(),
-            Some(value) => value.parse().unwrap()
-        };
         let mut response = Response::new(HTTPStatus::Ok);
-        response.add_header(HTTPHeader::new("Content-Type", vec!["text/plain"]));
-        response.add_header(HTTPHeader::new("Content-Length", vec![response_body.len().to_string().as_str()]));
+        let user_agent_values = request.get_known_header_values(HTTPHeader::UserAgent);
+        match user_agent_values {
+            None => {}
+            Some(values) => {
+                match values.first() {
+                    None => response.set_body(Body::default()),
+                    Some(value) => response.set_body(value.parse().unwrap())
+                }
+            }
+        };
 
-        response.body = Some(response_body);
+        response.set_content_length_header();
+        response.add_known_header(HTTPHeader::ContentType, vec!["text/plain"]);
         response
     });
 
@@ -67,11 +69,9 @@ pub fn get_routes() -> Vec<Route> {
                                 {
                                     let mut response = Response::new(HTTPStatus::Ok);
                                     let body: Body = content.parse().unwrap();
-
-                                    response.add_header(HTTPHeader::new("Content-Type", vec!["application/octet-stream"]));
-                                    response.add_header(HTTPHeader::new("Content-Length", vec![body.len().to_string().as_str()]));
-
-                                    response.body = Some(body);
+                                    response.add_known_header(HTTPHeader::ContentType, vec!["application/octet-stream"]);
+                                    response.set_body(body);
+                                    response.set_content_length_header();
                                     response
                                 }
                             Err(_) => not_found

@@ -1,29 +1,23 @@
-use std::collections::HashMap;
 use std::io::{BufReader, BufWriter, Write};
 use std::net::TcpListener;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 
 use crate::config::Config;
-use crate::http::{Headers, response};
 use crate::http::request::Request;
 use crate::http::response::{HTTPStatus, Response};
 use crate::route::Router;
 
 type RequestHandler = fn(request: &Request, config: &Config) -> Response;
-type ExactResource = bool;
 
 pub struct Server {
-    handlers: Arc<Mutex<HashMap<String, (ExactResource, RequestHandler)>>>,
     config: Arc<Config>,
     pub router: Arc<Router>,
 }
 
 impl Server {
     pub fn new(config: Config, router: Router) -> Server {
-        let handlers = Arc::new(Mutex::new(HashMap::with_capacity(1)));
         Self {
-            handlers,
             config: Arc::new(config),
             router: Arc::new(router),
         }
@@ -73,8 +67,8 @@ impl Server {
             let router = self.router.clone();
             thread::spawn(move || {
                 // println!("Request: {:?}", reader);
-                let mut response = Server::handle_request(&request, &router, &config);
-                
+                let response = Server::handle_request(&request, &router, &config);
+
                 let mut writer = BufWriter::new(&stream);
                 // let response = handler(&request, &config);
                 writer.write(response.try_into_bytes().buffer())

@@ -1,8 +1,7 @@
 use std::io::{BufWriter, Write};
 
-use crate::http::{Body, Headers, HTTPHeader};
-
-struct Status(i8, String);
+use crate::http::{Body, HeaderName};
+use crate::http::headers::{HeaderMap, HTTPHeader};
 
 #[derive(Debug)]
 pub enum HTTPStatus {
@@ -24,12 +23,13 @@ impl HTTPStatus {
 #[derive(Debug)]
 pub struct Response {
     pub status: HTTPStatus,
-    pub headers: Headers,
+    pub headers: HeaderMap,
     pub body: Option<Body>,
     http_version: Option<String>,
 }
 
 impl Response {
+    const LINE_FEED: &'static str = "\r\n";
     // TODO
     // Add set_body, set_headers
     // Add method for response headers separator and body separator
@@ -37,7 +37,7 @@ impl Response {
     pub fn new(status: HTTPStatus) -> Self {
         Self {
             status,
-            headers: Headers::new(),
+            headers: HeaderMap::new(),
             body: None,
             http_version: None,
         }
@@ -47,8 +47,36 @@ impl Response {
         self.http_version = Some(http_version.to_string())
     }
 
-    pub fn add_header(&mut self, header: HTTPHeader) {
-        self.headers.insert(header.name, header.values);
+    pub fn set_body(&mut self, body: Body) {
+        self.body = Some(body)
+    }
+
+    pub fn add_known_header(&mut self, header_name: HTTPHeader, header_values: Vec<&str>) {
+        self.insert_header_values(HeaderName::Known(header_name), header_values);
+    }
+    #[allow(dead_code)]
+    pub fn add_custom_header(&mut self, header_name: String, header_values: Vec<&str>) {
+        self.insert_header_values(HeaderName::Custom(header_name), header_values);
+    }
+
+    fn insert_header_values(&mut self, header_name: HeaderName, header_values: Vec<&str>) {
+        let header_name = match header_name {
+            HeaderName::Known(header) => header.to_string(),
+            HeaderName::Custom(header) => header
+        };
+        self.headers.insert(header_name, header_values.iter().map(|&value| { value.to_string() }).collect());
+    }
+
+    fn write_line_feed(buffer: &mut BufWriter<Vec<u8>>) -> std::io::Result<usize> {
+        // Response::LINE_FEED.as_bytes()
+        buffer.write(Response::LINE_FEED.as_bytes())
+    }
+
+    pub fn set_content_length_header(&mut self) {
+        match &self.body {
+            None => {}
+            Some(body) => self.add_known_header(HTTPHeader::ContentLength, vec![body.len().to_string().as_str()])
+        }
     }
 
     pub fn try_into_bytes(&self) -> BufWriter<Vec<u8>> {
@@ -62,20 +90,21 @@ impl Response {
 
         buf.write(status_line.as_bytes()).unwrap();
 
-        buf.write("\r\n".as_bytes()).unwrap();
+        let _ = Response::write_line_feed(&mut buf);
 
+        // TODO Move to Headers.try_into_bytes()
         let headers = self.headers.iter().map(|(header_name, header_value)| {
             return format!("{header_name}: {values}", values = header_value.join(", "));
-        }).collect::<Vec<_>>().join("\r\n");
+        }).collect::<Vec<_>>().join(Response::LINE_FEED);
 
         buf.write(headers.as_bytes()).unwrap();
-        buf.write("\r\n".as_bytes()).unwrap();
+        let _ = Response::write_line_feed(&mut buf);
 
 
         match &self.body {
             None => {}
             Some(body) => {
-                buf.write("\r\n".as_bytes()).unwrap();
+                let _ = Response::write_line_feed(&mut buf);
                 buf.write(body.content.as_slice()).unwrap();
             }
         }

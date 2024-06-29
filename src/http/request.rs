@@ -4,7 +4,8 @@ use std::io;
 use std::net::TcpStream;
 use std::str::FromStr;
 
-use crate::http::{Body, Headers, RequestLine};
+use crate::http::{Body, RequestLine};
+use crate::http::headers::{HeaderMap, HTTPHeader};
 
 #[allow(dead_code)]
 struct RequestTarget(String);
@@ -12,12 +13,6 @@ struct RequestTarget(String);
 #[allow(dead_code)]
 struct HTTPVersion;
 
-#[allow(dead_code)]
-enum HTTPHeader {
-    Host,
-    UserAgent,
-    Accept,
-}
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum HTTPMethod {
@@ -59,7 +54,7 @@ pub struct Request {
     pub http_version: String,
     pub resource: String,
     pub method: HTTPMethod,
-    pub headers: Headers,
+    pub headers: HeaderMap,
     pub body: Body,
 }
 
@@ -94,8 +89,8 @@ impl Request {
         })
     }
 
-    fn read_headers(stream: &mut BufReader<&TcpStream>) -> io::Result<Headers> {
-        let mut headers: Headers = Headers::new();
+    fn read_headers(stream: &mut BufReader<&TcpStream>) -> io::Result<HeaderMap> {
+        let mut headers: HeaderMap = HeaderMap::new();
 
         loop {
             let header_line = Request::read_header_line(stream)?;
@@ -161,5 +156,13 @@ impl Request {
         // };
         // println!("BODY: {:?}", String::from_utf8_lossy(&body));
         Ok(Body::new(content))
+    }
+
+
+    pub fn get_known_header_values(&self, header_name: HTTPHeader) -> Option<&Vec<String>> {
+        match self.headers.get(&header_name.to_string()) {
+            None => None,
+            Some(values) => Some(values)
+        }
     }
 }
